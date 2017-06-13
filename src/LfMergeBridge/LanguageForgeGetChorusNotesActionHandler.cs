@@ -71,7 +71,7 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 					// Content = msg?.Text ?? string.Empty,
 					Content = (msg == null) ? string.Empty : msg.Text,
 					Status = ChorusStatusToLfStatus(ann.Status),
-					Replies = new List<SerializableLfCommentReply>(),
+					Replies = new List<SerializableLfCommentReply>(ann.Messages.Skip(1).Where(m => ! String.IsNullOrWhiteSpace(m.Text)).Select(ReplyFromChorusMsg)),
 					IsDeleted = false
 				};
 				lfComment.Regarding = new SerializableLfCommentRegarding {
@@ -92,6 +92,21 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			// var tmpFile = new Palaso.IO.TempFile(result.ToString());  // Deliberately NOT using "using" because we don't want to dispose of this one.
 			// LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, "JSON has been written to " + tmpFile.Path);
 			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, result.ToString());
+		}
+
+		private SerializableLfCommentReply ReplyFromChorusMsg(Message msg)
+		{
+			var reply = new SerializableLfCommentReply();
+			reply.Guid = msg.Guid;
+			reply.AuthorNameAlternate = msg.Author;
+			if (reply.AuthorInfo == null)
+				reply.AuthorInfo = new SerializableLfAuthorInfo();
+			reply.AuthorInfo.CreatedDate = msg.Date;
+			reply.AuthorInfo.ModifiedDate = msg.Date;
+			reply.Content = msg.Text;
+			reply.IsDeleted = false;
+			reply.UniqId = null; // This will be set in LfMerge.
+			return reply;
 		}
 
 		private string ExtractGuidFromChorusRef(string refStillEscaped)

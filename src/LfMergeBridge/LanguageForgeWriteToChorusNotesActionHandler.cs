@@ -58,8 +58,20 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			ProjectDir = Path.GetDirectoryName(pOption);
 			Progress = progress;
 
-			// TODO: Use a better parameter name, a static string stored in LfMergeBridge like other actions do
-			List<SerializableLfAnnotation> dataFromLF = DecodeInputFile(options["-i"]);
+			// TODO: Use better parameter names than "-i" and "-j". A static string stored in LfMergeBridge, like other actions use, would probably be best.
+
+			// We need to serialize the Mongo ObjectIds of the SerializableLfAnnotation objects coming from LfMerge (they're called LfComment over there),
+			// but we can't put them in the SerializableLfAnnotation definition
+			string inputFilename1 = options["-i"];
+			string inputFilename2 = options["-j"];
+			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input filenames: {inputFilename1} and {inputFilename2}");
+			string data1 = File.ReadAllText(inputFilename1);
+			string data2 = File.ReadAllText(inputFilename2);
+			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input data: {data1} and {data2}");
+
+			Tuple<List<string>, List<SerializableLfAnnotation>> dataFromLF = DecodeInputFile(inputFilename1, inputFilename2);
+			List<string> commentIdsFromLD = dataFromLF.Item1;
+			List<SerializableLfAnnotation> commentsFromLF = dataFromLF.Item2;
 			AnnotationRepository[] annRepos = GetAnnotationRepositories();
 			AnnotationRepository primaryRepo = annRepos[0];
 
@@ -85,14 +97,27 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			// First criterion: how many messages are there?
 			// Second criterion: go through either *content*, or *date modified*. (Decide which one). Probably date modified. (or AuthorInfo.DateModified)
 
-			var uniqIdsThatNeedGuids = new Dictionary<string,string>();
+			var commentIdsThatNeedGuids = new Dictionary<string,string>();
+			var replyIdsThatNeedGuids = new Dictionary<string,string>();
 
-			foreach (var lfAnnotation in dataFromLF)
+			// It's ridiculous that we have to write so much verbosity to get this data. C# 7 tuples would be much nicer, but we can't use them yet since
+			// we still have to compile (for now) against Mono 4, which only has C# 6 available. Mono 5 will have C# 7, but we can't count on it yet.
+			foreach (Tuple<string, SerializableLfAnnotation> kvp in commentIdsFromLD.Zip(commentsFromLF, (a,b) => new Tuple<string, SerializableLfAnnotation>(a,b)))
 			{
-				if (lfAnnotation.IsDeleted)
+				string lfAnnotationObjectId = kvp.Item1;
+				SerializableLfAnnotation lfAnnotation = kvp.Item2;
+				if (lfAnnotation == null || lfAnnotation.IsDeleted)
 				{
-					LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, String.Format("Skipping deleted annotation {0} containing content \"{1}\"",
-						lfAnnotation.Guid, lfAnnotation.Content));
+					if (lfAnnotation == null)
+					{
+						LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, String.Format("Skipping null annotation with MongoId {0}",
+							lfAnnotationObjectId ?? "(null ObjectId)"));
+					}
+					else
+					{
+						LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, String.Format("Skipping deleted annotation {0} containing content \"{1}\"",
+							lfAnnotation?.Guid ?? "(no guid)", lfAnnotation?.Content ?? "(no content)"));
+					}
 					continue;
 				}
 				// string ownerGuid = lfAnnotation.Regarding?.TargetGuid ?? string.Empty;
@@ -103,7 +128,7 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 				Annotation chorusAnnotation;
 				if (lfAnnotation.Guid != null && chorusAnnotationsByGuid.TryGetValue(lfAnnotation.Guid, out chorusAnnotation) && chorusAnnotation != null)
 				{
-					SetChorusAnnotationMessagesFromLfReplies(chorusAnnotation, lfAnnotation, uniqIdsThatNeedGuids);
+					SetChorusAnnotationMessagesFromLfReplies(chorusAnnotation, lfAnnotation, lfAnnotationObjectId, replyIdsThatNeedGuids, commentIdsThatNeedGuids);
 					LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, String.Format("Wrote annotation {0} containing messages [{1}]",
 						chorusAnnotation.Guid, String.Join(", ", chorusAnnotation.Messages.Select(msg => "\"" + msg.Text + "\""))));
 					if (lfAnnotation.Replies == null || lfAnnotation.Replies.Count == 0)
@@ -112,29 +137,22 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 				else
 				{
 					Annotation newAnnotation = CreateAnnotation(lfAnnotation.Content, lfAnnotation.Guid, lfAnnotation.AuthorNameAlternate, lfAnnotation.Status, ownerGuid, ownerShortName);
-					SetChorusAnnotationMessagesFromLfReplies(newAnnotation, lfAnnotation, uniqIdsThatNeedGuids);
-					LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, String.Format("*NEW* annotation {0} containing messages [{1}]",
-						newAnnotation.Guid, String.Join(", ", newAnnotation.Messages.Select(msg => "\"" + msg.Text + "\""))));
+					SetChorusAnnotationMessagesFromLfReplies(newAnnotation, lfAnnotation, lfAnnotationObjectId, replyIdsThatNeedGuids, commentIdsThatNeedGuids);
+					LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, String.Format("*NEW* annotation {0} with ref URL {2} containing messages [{1}]",
+						newAnnotation.Guid, String.Join(", ", newAnnotation.Messages.Select(msg => "\"" + msg.Text + "\"")), newAnnotation.RefStillEscaped));
 					if (lfAnnotation.Replies == null || lfAnnotation.Replies.Count == 0)
 						LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, "... which had no replies.");
 					// XYZZY commenting out
-					// primaryRepo.AddAnnotation(newAnnotation);
+					primaryRepo.AddAnnotation(newAnnotation);
 				}
 			}
 
-			// TODO: At this point, some of the lfAnnotation objects may have new GUIDs in their Replies list (because
-			// those replies were new, or were created before LF grew a GUID field on replies.) We need to find those
-			// new GUIDs and send them back over the wall to LfMerge so that they can go into Mongo. Otherwise, those
-			// new or GUIDless replies will look new the *next* time we S/R, and we'll end up duplicating them.
-
-			// TODO: We now have that data in "uniqIdsThatNeedGuids". Send it back over the wall.
-			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, String.Format("Total of {0} reply ID->Guid mappings found", uniqIdsThatNeedGuids.Count));
+			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, String.Format("New comment ID->Guid mappings: {0}",
+				String.Join(";", commentIdsThatNeedGuids.Select(kv => String.Format("{0}={1}", kv.Key, kv.Value)))));
 			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, String.Format("New reply ID->Guid mappings: {0}",
-				String.Join(";", uniqIdsThatNeedGuids.Select(kv => String.Format("{0}={1}", kv.Key, kv.Value)))));
+				String.Join(";", replyIdsThatNeedGuids.Select(kv => String.Format("{0}={1}", kv.Key, kv.Value)))));
 
-
-			// XYZZY commenting out
-			// SaveReposIfNeeded(annRepos, progress);
+			SaveReposIfNeeded(annRepos, progress);
 		}
 
 		private void SaveReposIfNeeded(IEnumerable<AnnotationRepository> repos, IProgress progress)
@@ -184,11 +202,17 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			return true;
 		}
 
-		private void SetChorusAnnotationMessagesFromLfReplies(Annotation chorusAnnotation, SerializableLfAnnotation annotationInfo, Dictionary<string,string> uniqIdsThatNeedGuids)
+		private void SetChorusAnnotationMessagesFromLfReplies(Annotation chorusAnnotation, SerializableLfAnnotation annotationInfo, string annotationObjectId, Dictionary<string,string> uniqIdsThatNeedGuids, Dictionary<string,string> commentIdsThatNeedGuids)
 		{
 			// TODO: We'll need another parameter, or else a private instance variable, to build up a list of (PHP id, GUID) pairs
 			// for communicating back to LfMerge at the end. I'd prefer another parameter, as an instance variable just hides the
 			// dependency and makes it harder to test.
+
+			// Any LF comments that do NOT yet have GUIDs need them set from the corresponding Chorus annotation
+			if (String.IsNullOrEmpty(annotationInfo.Guid) && !String.IsNullOrEmpty(annotationObjectId))
+			{
+				commentIdsThatNeedGuids[annotationObjectId] = chorusAnnotation.Guid;
+			}
 
 			if (annotationInfo.Replies == null || annotationInfo.Replies.Count <= 0)
 			{
@@ -206,7 +230,7 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 					continue;
 				}
 				// XYZZY commenting out
-				Message newChorusMsg = chorusAnnotation.AddMessage(reply.AuthorNameAlternate, statusToSet, reply.Text);
+				Message newChorusMsg = chorusAnnotation.AddMessage(reply.AuthorNameAlternate, statusToSet, reply.Content);
 				if ((string.IsNullOrEmpty(reply.Guid) || reply.Guid == zeroGuidStr) && ! string.IsNullOrEmpty(reply.UniqId))
 				{
 					uniqIdsThatNeedGuids[reply.UniqId] = newChorusMsg.Guid;
@@ -298,13 +322,17 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 		}
 
 		// TODO: Move this to a more appropriate class since the Get and WriteTo handlers both use it
-		public static List<SerializableLfAnnotation> DecodeInputFile(string inputFilename)
+		public static Tuple<List<string>, List<SerializableLfAnnotation>> DecodeInputFile(string inputFilename1, string inputFilename2)
 		{
-			var json = new DataContractJsonSerializer(typeof(List<SerializableLfAnnotation>));
-			var utf8 = new UTF8Encoding(false);
-			using (var stream = File.OpenRead(inputFilename))
+			var commentIdsJsonSerializer = new DataContractJsonSerializer(typeof(List<string>));
+			var commentsJsonSerializer = new DataContractJsonSerializer(typeof(List<SerializableLfAnnotation>));
+			// var utf8 = new UTF8Encoding(false);  // Not actually needed
+			using (var stream1 = File.OpenRead(inputFilename1))
+			using (var stream2 = File.OpenRead(inputFilename2))
 			{
-				return (List<SerializableLfAnnotation>)json.ReadObject(stream);
+				var commentIds = (List<string>)commentIdsJsonSerializer.ReadObject(stream1);
+				var comments = (List<SerializableLfAnnotation>)commentsJsonSerializer.ReadObject(stream2);
+				return new Tuple<List<string>, List<SerializableLfAnnotation>>(commentIds, comments);
 			}
 		}
 
