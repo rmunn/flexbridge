@@ -69,9 +69,8 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			string data2 = File.ReadAllText(inputFilename2);
 			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input data: {data1} and {data2}");
 
-			Tuple<List<string>, List<SerializableLfAnnotation>> dataFromLF = DecodeInputFile(inputFilename1, inputFilename2);
-			List<string> commentIdsFromLD = dataFromLF.Item1;
-			List<SerializableLfAnnotation> commentsFromLF = dataFromLF.Item2;
+			List<string> commentIdsFromLD = DecodeInputFile<List<string>>(inputFilename1);
+			List<SerializableLfAnnotation> commentsFromLF = DecodeInputFile<List<SerializableLfAnnotation>>(inputFilename2);
 			AnnotationRepository[] annRepos = GetAnnotationRepositories();
 			AnnotationRepository primaryRepo = annRepos[0];
 
@@ -328,18 +327,12 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 		}
 
 		// TODO: Move this to a more appropriate class since the Get and WriteTo handlers both use it
-		// TODO: Also, rewrite this to be a generic function of type T and decode a single file, then have it called twice. MUCH simpler.
-		public static Tuple<List<string>, List<SerializableLfAnnotation>> DecodeInputFile(string inputFilename1, string inputFilename2)
+		public static T DecodeInputFile<T>(string inputFilename)
 		{
-			var commentIdsJsonSerializer = new DataContractJsonSerializer(typeof(List<string>));
-			var commentsJsonSerializer = new DataContractJsonSerializer(typeof(List<SerializableLfAnnotation>));
-			// var utf8 = new UTF8Encoding(false);  // Not actually needed
-			using (var stream1 = File.OpenRead(inputFilename1))
-			using (var stream2 = File.OpenRead(inputFilename2))
+			var commentIdsJsonSerializer = new DataContractJsonSerializer(typeof(T));
+			using (var stream = File.OpenRead(inputFilename))
 			{
-				var commentIds = (List<string>)commentIdsJsonSerializer.ReadObject(stream1);
-				var comments = (List<SerializableLfAnnotation>)commentsJsonSerializer.ReadObject(stream2);
-				return new Tuple<List<string>, List<SerializableLfAnnotation>>(commentIds, comments);
+				return (T)commentIdsJsonSerializer.ReadObject(stream);
 			}
 		}
 
