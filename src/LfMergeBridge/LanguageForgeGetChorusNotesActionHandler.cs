@@ -55,6 +55,8 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			// Dictionary<string, SerializableLfAnnotation> lfAnns = dataFromLF.ToDictionary(ann => ann.Guid, ann => ann);
 			// ... and now do something with this
 
+			// TODO: Yes. we do need to decode the input file. Also, do the TODO that I wrote on DecodeInputFile.
+
 			var utf8 = new UTF8Encoding(false);
 			var result = new StringBuilder();
 			var json = new DataContractJsonSerializer(typeof(IEnumerable<SerializableLfAnnotation>));

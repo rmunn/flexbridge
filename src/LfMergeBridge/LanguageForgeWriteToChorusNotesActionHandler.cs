@@ -100,7 +100,7 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			var commentIdsThatNeedGuids = new Dictionary<string,string>();
 			var replyIdsThatNeedGuids = new Dictionary<string,string>();
 
-			// It's ridiculous that we have to write so much verbosity to get this data. C# 7 tuples would be much nicer, but we can't use them yet since
+			// It's silly that we have to write so much verbosity to get this data. C# 7 tuples would be much nicer, but we can't use them yet since
 			// we still have to compile (for now) against Mono 4, which only has C# 6 available. Mono 5 will have C# 7, but we can't count on it yet.
 			foreach (Tuple<string, SerializableLfAnnotation> kvp in commentIdsFromLD.Zip(commentsFromLF, (a,b) => new Tuple<string, SerializableLfAnnotation>(a,b)))
 			{
@@ -237,8 +237,14 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 					// uniqIdsThatNeedGuids[reply.UniqId] = Guid.NewGuid().ToString(); // Just for testing purposes. TODO: Remove this line entirely.
 				}
 			}
-			// Since LF allows changing a comment's status without adding any replies, it's possible we haven't updated the Chorus status yet at this point
-			if (statusToSet != chorusAnnotation.Status)
+			// Since LF allows changing a comment's status without adding any replies, it's possible we haven't updated the Chorus status yet at this point.
+			// But first, check for a special case. Oten, the Chorus annotation's status will be blank, which corresponds to "open" in LfMerge. We don't want
+			// to add a blank message just to change the Chorus status from "" (empty string) to "open", so we need to detect this situation specially.
+			if (String.IsNullOrEmpty(chorusAnnotation.Status) && statusToSet == SerializableChorusAnnotation.Open)
+			{
+				// No need for new status here
+			}
+			else if (statusToSet != chorusAnnotation.Status)
 			{
 				// LF doesn't keep track of who clicked on the "Resolved" or "Todo" buttons, so we have to be vague about authorship
 				chorusAnnotation.SetStatus(genericAuthorName, statusToSet);
@@ -322,6 +328,7 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 		}
 
 		// TODO: Move this to a more appropriate class since the Get and WriteTo handlers both use it
+		// TODO: Also, rewrite this to be a generic function of type T and decode a single file, then have it called twice. MUCH simpler.
 		public static Tuple<List<string>, List<SerializableLfAnnotation>> DecodeInputFile(string inputFilename1, string inputFilename2)
 		{
 			var commentIdsJsonSerializer = new DataContractJsonSerializer(typeof(List<string>));
