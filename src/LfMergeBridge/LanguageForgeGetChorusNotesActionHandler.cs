@@ -57,43 +57,77 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 
 			// TODO: Yes. we do need to decode the input file. Also, do the TODO that I wrote on DecodeInputFile.
 
-			var utf8 = new UTF8Encoding(false);
-			var result = new StringBuilder();
-			var json = new DataContractJsonSerializer(typeof(IEnumerable<SerializableLfAnnotation>));
+			string inputFilename = options["-i"];
+			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input filename: {inputFilename}");
+			string data = File.ReadAllText(inputFilename);
+			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input data: {data}");
+
+			List<SerializableLfAnnotation> commentsFromLF = LanguageForgeWriteToChorusNotesActionHandler.DecodeInputFile<List<SerializableLfAnnotation>>(inputFilename);
+			var knownCommentGuids = new HashSet<string>(commentsFromLF.Select(comment => comment.Guid));
+			var knownReplyGuids = new HashSet<string>(commentsFromLF.SelectMany(comment => comment.Replies.Select(reply => reply.Guid)));
+
 			var lfAnns = new List<SerializableLfAnnotation>();
+			var lfReplies = new List<Tuple<string, List<SerializableLfCommentReply>>>();
 			foreach (Annotation ann in GetAllAnnotations(ProjectDir))
 			{
-				var msg = ann.Messages.FirstOrDefault();
-				var lfComment = new SerializableLfAnnotation {
-					Guid = ann.Guid,
-					// Author = msg?.Author ?? string.Empty,
-					AuthorNameAlternate = (msg == null) ? string.Empty : msg.Author,
-					DateCreated = ann.Date,  // TODO: Local or UTC?
-					DateModified = ann.Date, // Same consideration
-					// Content = msg?.Text ?? string.Empty,
-					Content = (msg == null) ? string.Empty : msg.Text,
-					Status = ChorusStatusToLfStatus(ann.Status),
-					Replies = new List<SerializableLfCommentReply>(ann.Messages.Skip(1).Where(m => ! String.IsNullOrWhiteSpace(m.Text)).Select(ReplyFromChorusMsg)),
-					IsDeleted = false
-				};
-				lfComment.Regarding = new SerializableLfCommentRegarding {
-					TargetGuid = ExtractGuidFromChorusRef(ann.RefStillEscaped),
-					Word = ann.LabelOfThingAnnotated, // TODO: Might have to set this one in LfMerge, using the Guid to find the right word and meaning
-					Meaning = string.Empty  // TODO: Have to set this one in LfMerge; see above
-				};
-				lfAnns.Add(lfComment);
+				if (knownCommentGuids.Contains(ann.Guid))
+				{
+					// Known comment; only serialize new replies
+					List<SerializableLfCommentReply> repliesNotYetInLf =
+						ann
+							.Messages
+							.Skip(1)  // First message translates to the LF *comment*, while subsequent messages are *replies* in LF
+							.Where(m => ! String.IsNullOrWhiteSpace(m.Text))
+							.Where(m => ! knownReplyGuids.Contains(m.Guid))
+							.Select(ReplyFromChorusMsg)
+							.ToList();
+					lfReplies.Add(new Tuple<string, List<SerializableLfCommentReply>>(ann.Guid, repliesNotYetInLf));
+				}
+				else
+				{
+					// New comment: serialize everything
+					var msg = ann.Messages.FirstOrDefault();
+					var lfComment = new SerializableLfAnnotation {
+						Guid = ann.Guid,
+						// Author = msg?.Author ?? string.Empty,
+						AuthorNameAlternate = (msg == null) ? string.Empty : msg.Author,
+						DateCreated = ann.Date,  // TODO: Local or UTC?
+						DateModified = ann.Date, // Same consideration
+						// Content = msg?.Text ?? string.Empty,
+						Content = (msg == null) ? string.Empty : msg.Text,
+						Status = ChorusStatusToLfStatus(ann.Status),
+						Replies = new List<SerializableLfCommentReply>(ann.Messages.Skip(1).Where(m => ! String.IsNullOrWhiteSpace(m.Text)).Select(ReplyFromChorusMsg)),
+						IsDeleted = false
+					};
+					lfComment.Regarding = new SerializableLfCommentRegarding {
+						TargetGuid = ExtractGuidFromChorusRef(ann.RefStillEscaped),
+						Word = ann.LabelOfThingAnnotated, // TODO: Might have to set this one in LfMerge, using the Guid to find the right word and meaning
+						Meaning = string.Empty  // TODO: Have to set this one in LfMerge; see above
+					};
+					lfAnns.Add(lfComment);
+				}
 			}
 			// Sigh... but .Net only offers WriteObject(stream, object), not MakeString(object)
+			var serializedComments = new StringBuilder("New comments not yet in LF: ");
 			using (var stream = new MemoryStream())
 			{
+				var json = new DataContractJsonSerializer(typeof(IEnumerable<SerializableLfAnnotation>));
 				json.WriteObject(stream, lfAnns);
 				stream.Flush();
-				result.Append(Encoding.UTF8.GetString(stream.GetBuffer()));
+				serializedComments.Append(Encoding.UTF8.GetString(stream.GetBuffer()));
 			}
-			// Send results back to LfMerge
-			// var tmpFile = new Palaso.IO.TempFile(result.ToString());  // Deliberately NOT using "using" because we don't want to dispose of this one.
-			// LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, "JSON has been written to " + tmpFile.Path);
-			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, result.ToString());
+			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, serializedComments.ToString());
+
+			var serializedReplies = new StringBuilder("New replies on comments already in LF: ");
+			using (var stream = new MemoryStream())
+			{
+				// TODO: DataContractJsonSerializer can't handle tuples. Switch to Newtonsoft.
+				var json = new DataContractJsonSerializer(typeof(IEnumerable<Tuple<string, List<SerializableLfCommentReply>>>));
+				json.WriteObject(stream, lfReplies);
+				stream.Flush();
+				serializedReplies.Append(Encoding.UTF8.GetString(stream.GetBuffer()));
+			}
+			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, serializedReplies.ToString());
 		}
 
 		private SerializableLfCommentReply ReplyFromChorusMsg(Message msg)
