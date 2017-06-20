@@ -7,6 +7,7 @@ using System.ComponentModel.Composition;
 using System.IO;
 using System.Linq;
 using System.Runtime.Serialization.Json;
+using Newtonsoft.Json;
 using System.Text;
 using Chorus;
 using Chorus.merge;
@@ -81,7 +82,10 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 							.Where(m => ! knownReplyGuids.Contains(m.Guid))
 							.Select(ReplyFromChorusMsg)
 							.ToList();
-					lfReplies.Add(new Tuple<string, List<SerializableLfCommentReply>>(ann.Guid, repliesNotYetInLf));
+					if (repliesNotYetInLf.Count > 0)
+					{
+						lfReplies.Add(new Tuple<string, List<SerializableLfCommentReply>>(ann.Guid, repliesNotYetInLf));
+					}
 				}
 				else
 				{
@@ -107,26 +111,12 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 					lfAnns.Add(lfComment);
 				}
 			}
-			// Sigh... but .Net only offers WriteObject(stream, object), not MakeString(object)
 			var serializedComments = new StringBuilder("New comments not yet in LF: ");
-			using (var stream = new MemoryStream())
-			{
-				var json = new DataContractJsonSerializer(typeof(IEnumerable<SerializableLfAnnotation>));
-				json.WriteObject(stream, lfAnns);
-				stream.Flush();
-				serializedComments.Append(Encoding.UTF8.GetString(stream.GetBuffer()));
-			}
+			serializedComments.Append(JsonConvert.SerializeObject(lfAnns));
 			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, serializedComments.ToString());
 
 			var serializedReplies = new StringBuilder("New replies on comments already in LF: ");
-			using (var stream = new MemoryStream())
-			{
-				// TODO: DataContractJsonSerializer can't handle tuples. Switch to Newtonsoft.
-				var json = new DataContractJsonSerializer(typeof(IEnumerable<Tuple<string, List<SerializableLfCommentReply>>>));
-				json.WriteObject(stream, lfReplies);
-				stream.Flush();
-				serializedReplies.Append(Encoding.UTF8.GetString(stream.GetBuffer()));
-			}
+			serializedReplies.Append(JsonConvert.SerializeObject(lfReplies));
 			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, serializedReplies.ToString());
 		}
 

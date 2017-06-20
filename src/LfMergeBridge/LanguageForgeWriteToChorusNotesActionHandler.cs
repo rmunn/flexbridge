@@ -7,6 +7,7 @@ using System.ComponentModel.Composition;
 using System.IO;
 using System.Linq;
 using System.Runtime.Serialization.Json;
+using Newtonsoft.Json;
 using System.Text;
 using Chorus;
 using Chorus.merge;
@@ -329,11 +330,18 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 		// TODO: Move this to a more appropriate class since the Get and WriteTo handlers both use it
 		public static T DecodeInputFile<T>(string inputFilename)
 		{
-			var commentIdsJsonSerializer = new DataContractJsonSerializer(typeof(T));
-			using (var stream = File.OpenRead(inputFilename))
-			{
-				return (T)commentIdsJsonSerializer.ReadObject(stream);
-			}
+			var jsonSerializer = new DataContractJsonSerializer(typeof(T));
+			string data = File.ReadAllText(inputFilename, Encoding.UTF8);
+			return JsonConvert.DeserializeObject<T>(data);
+
+			// OLD, using DataContract:
+
+			// var commentIdsJsonSerializer = new DataContractJsonSerializer(typeof(T));
+			// using (var stream = File.OpenRead(inputFilename))
+			// {
+			// 	return (T)commentIdsJsonSerializer.ReadObject(stream);
+			// }
+
 		}
 
 		private static string MakeFlexRefURL(string guidStr, string shortName)
