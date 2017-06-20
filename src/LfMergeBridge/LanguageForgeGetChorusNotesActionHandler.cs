@@ -64,8 +64,8 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input data: {data}");
 
 			List<SerializableLfAnnotation> commentsFromLF = LanguageForgeWriteToChorusNotesActionHandler.DecodeInputFile<List<SerializableLfAnnotation>>(inputFilename);
-			var knownCommentGuids = new HashSet<string>(commentsFromLF.Select(comment => comment.Guid));
-			var knownReplyGuids = new HashSet<string>(commentsFromLF.SelectMany(comment => comment.Replies.Select(reply => reply.Guid)));
+			var knownCommentGuids = new HashSet<string>(commentsFromLF.Where(comment => comment.Guid != null).Select(comment => comment.Guid));
+			var knownReplyGuids = new HashSet<string>(commentsFromLF.Where(comment => comment.Replies != null).SelectMany(comment => comment.Replies.Where(reply => reply.Guid != null).Select(reply => reply.Guid)));
 
 			var lfAnns = new List<SerializableLfAnnotation>();
 			var lfReplies = new List<Tuple<string, List<SerializableLfCommentReply>>>();

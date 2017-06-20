@@ -59,23 +59,20 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			ProjectDir = Path.GetDirectoryName(pOption);
 			Progress = progress;
 
-			// TODO: Use better parameter names than "-i" and "-j". A static string stored in LfMergeBridge, like other actions use, would probably be best.
+			// TODO: Use a better parameter name than "-i". A static string stored in LfMergeBridge, like other actions use, would probably be best.
 
 			// We need to serialize the Mongo ObjectIds of the SerializableLfAnnotation objects coming from LfMerge (they're called LfComment over there),
 			// but we can't put them in the SerializableLfAnnotation definition
-			string inputFilename1 = options["-i"];
-			string inputFilename2 = options["-j"];
-			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input filenames: {inputFilename1} and {inputFilename2}");
-			string data1 = File.ReadAllText(inputFilename1);
-			string data2 = File.ReadAllText(inputFilename2);
-			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input data: {data1} and {data2}");
+			string inputFilename = options["-i"];
+			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input filename: {inputFilename}");
+			string data = File.ReadAllText(inputFilename);
+			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input data: {data}");
 
-			List<string> commentIdsFromLD = DecodeInputFile<List<string>>(inputFilename1);
-			List<SerializableLfAnnotation> commentsFromLF = DecodeInputFile<List<SerializableLfAnnotation>>(inputFilename2);
+			List<KeyValuePair<string, SerializableLfAnnotation>> commentsFromLF = DecodeInputFile<List<KeyValuePair<string, SerializableLfAnnotation>>>(inputFilename);
 			AnnotationRepository[] annRepos = GetAnnotationRepositories();
 			AnnotationRepository primaryRepo = annRepos[0];
 
-			// This does NOT work, because there can be duplicate keys (why?)
+			// The following line does NOT work, because there can be duplicate keys (why?)
 			// Dictionary<string, Annotation> chorusAnnotationsByGuid = annRepos.SelectMany(repo => repo.GetAllAnnotations()).ToDictionary(ann => ann.Guid, ann => ann);
 			// Instead we have to do it by hand:
 			var chorusAnnotationsByGuid = new Dictionary<string, Annotation>();
@@ -102,10 +99,10 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 
 			// It's silly that we have to write so much verbosity to get this data. C# 7 tuples would be much nicer, but we can't use them yet since
 			// we still have to compile (for now) against Mono 4, which only has C# 6 available. Mono 5 will have C# 7, but we can't count on it yet.
-			foreach (Tuple<string, SerializableLfAnnotation> kvp in commentIdsFromLD.Zip(commentsFromLF, (a,b) => new Tuple<string, SerializableLfAnnotation>(a,b)))
+			foreach (KeyValuePair<string, SerializableLfAnnotation> kvp in commentsFromLF)
 			{
-				string lfAnnotationObjectId = kvp.Item1;
-				SerializableLfAnnotation lfAnnotation = kvp.Item2;
+				string lfAnnotationObjectId = kvp.Key;
+				SerializableLfAnnotation lfAnnotation = kvp.Value;
 				if (lfAnnotation == null || lfAnnotation.IsDeleted)
 				{
 					if (lfAnnotation == null)
@@ -142,7 +139,6 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 						newAnnotation.Guid, String.Join(", ", newAnnotation.Messages.Select(msg => "\"" + msg.Text + "\"")), newAnnotation.RefStillEscaped));
 					if (lfAnnotation.Replies == null || lfAnnotation.Replies.Count == 0)
 						LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, "... which had no replies.");
-					// XYZZY commenting out
 					primaryRepo.AddAnnotation(newAnnotation);
 				}
 			}
