@@ -47,17 +47,15 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			ProjectName = Path.GetFileNameWithoutExtension(pOption);
 			ProjectDir = Path.GetDirectoryName(pOption);
 
-			// TODO: Consider whether to move that DecodeInputFile function out into its own class, since both handlers are going to use it
-			//           - Actually, that "own class" could mostly do two-way work, and have both handlers call ONE of its two "work" functions. Something to consider, at least.
-
 			string inputFilename = options[LfMergeBridge.LfMergeBridgeUtilities.serializedCommentsFromLfMerge];
-			List<SerializableLfComment> commentsFromLF = LanguageForgeWriteToChorusNotesActionHandler.DecodeInputFile<List<SerializableLfComment>>(inputFilename);
+			List<SerializableLfComment> commentsFromLF = LfMergeBridge.LfMergeBridgeUtilities.DecodeJsonFile<List<SerializableLfComment>>(inputFilename);
 			var knownCommentGuids = new HashSet<string>(commentsFromLF.Where(comment => comment.Guid != null).Select(comment => comment.Guid));
 			var knownReplyGuids = new HashSet<string>(commentsFromLF.Where(comment => comment.Replies != null).SelectMany(comment => comment.Replies.Where(reply => reply.Guid != null).Select(reply => reply.Guid)));
 
 			var lfComments = new List<SerializableLfComment>();
 			var lfReplies = new List<Tuple<string, List<SerializableLfCommentReply>>>();
-			foreach (Annotation ann in GetAllAnnotations(ProjectDir))
+			// TODO: See if we want to suppress progress messages here by using a NullProgress instance instead of the IProgress instance we were given...
+			foreach (Annotation ann in GetAllAnnotations(progress, ProjectDir))
 			{
 				if (knownCommentGuids.Contains(ann.Guid))
 				{
@@ -133,7 +131,7 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 
 		private string ChorusStatusToLfStatus(string status)
 		{
-			if (status == SerializableChorusAnnotation.Closed)
+			if (status == Chorus.notes.Annotation.Closed)
 			{
 				return SerializableLfComment.Resolved;
 			}
@@ -143,10 +141,9 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			}
 		}
 
-        IEnumerable<Annotation> GetAllAnnotations(string projectDir)
+		IEnumerable<Annotation> GetAllAnnotations(IProgress progress, string projectDir)
 		{
-			var nullProgress = new NullProgress();  // TODO: Just pass in the progress object we were given!
-			return from repo in AnnotationRepository.CreateRepositoriesFromFolder(projectDir, nullProgress)
+			return from repo in AnnotationRepository.CreateRepositoriesFromFolder(projectDir, progress)
 				from ann in repo.GetAllAnnotations()
 				select ann;
 		}
@@ -160,67 +157,5 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 		}
 
 		#endregion IBridgeActionTypeHandler impl
-
-		#region IDisposable impl
-
-		/// <summary>
-		/// Finalizer, in case client doesn't dispose it.
-		/// Force Dispose(false) if not already called (i.e. m_isDisposed is true)
-		/// </summary>
-		~LanguageForgeGetChorusNotesActionHandler()
-		{
-			Dispose(false);
-			// The base class finalizer is called automatically.
-		}
-
-		/// <summary>
-		/// Performs application-defined tasks associated with freeing, releasing,
-		/// or resetting unmanaged resources.
-		/// </summary>
-		public void Dispose()
-		{
-			Dispose(true);
-			// This object will be cleaned up by the Dispose method.
-			// Therefore, you should call GC.SupressFinalize to
-			// take this object off the finalization queue
-			// and prevent finalization code for this object
-			// from executing a second time.
-			GC.SuppressFinalize(this);
-		}
-
-		private bool IsDisposed { get; set; }
-
-		/// <summary>
-		/// Executes in two distinct scenarios.
-		///
-		/// 1. If disposing is true, the method has been called directly
-		/// or indirectly by a user's code via the Dispose method.
-		/// Both managed and unmanaged resources can be disposed.
-		///
-		/// 2. If disposing is false, the method has been called by the
-		/// runtime from inside the finalizer and you should not reference (access)
-		/// other managed objects, as they already have been garbage collected.
-		/// Only unmanaged resources can be disposed.
-		/// </summary>
-		/// <remarks>
-		/// If any exceptions are thrown, that is fine.
-		/// If the method is being done in a finalizer, it will be ignored.
-		/// If it is thrown by client code calling Dispose,
-		/// it needs to be handled by fixing the issue.
-		/// </remarks>
-		private void Dispose(bool disposing)
-		{
-			if (IsDisposed)
-				return;
-
-			ProjectName = null;
-			ProjectDir = null;
-
-			IsDisposed = true;
-
-			// You know, I don't think we *need* to be IDisposable any more...
-		}
-
-		#endregion IDisposable impl
 	}
 }

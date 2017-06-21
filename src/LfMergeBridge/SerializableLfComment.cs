@@ -11,7 +11,6 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
  		public static readonly string Open = "open";
 		public static readonly string Resolved = "resolved";
  		public static readonly string Todo = "todo";
-		public static string TimeFormatNoTimeZone = SerializableChorusAnnotation.TimeFormatNoTimeZone;
 		[DataMember] public string Guid { get; set; }
 		[DataMember] public string AuthorNameAlternate { get; set; }
 		[DataMember] public SerializableLfCommentRegarding Regarding { get; set; }

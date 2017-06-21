@@ -66,8 +66,8 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			string data = File.ReadAllText(inputFilename);
 			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input data: {data}");
 
-			List<KeyValuePair<string, SerializableLfComment>> commentsFromLF = DecodeInputFile<List<KeyValuePair<string, SerializableLfComment>>>(inputFilename);
-			AnnotationRepository[] annRepos = GetAnnotationRepositories();
+			List<KeyValuePair<string, SerializableLfComment>> commentsFromLF = LfMergeBridge.LfMergeBridgeUtilities.DecodeJsonFile<List<KeyValuePair<string, SerializableLfComment>>>(inputFilename);
+			AnnotationRepository[] annRepos = GetAnnotationRepositories(progress);
 			AnnotationRepository primaryRepo = annRepos[0];
 
 			// The LINQ-based approach in the following line does NOT work, because there can be duplicate keys for some reason.
@@ -147,43 +147,16 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			}
 		}
 
-		private bool MessageIsLikeReply(Message chorusMsg, SerializableLfCommentReply lfReply)
-		{
-			// return (chorusMsg.GetHtmlText(null) == lfReply.Text);  // TODO: What do we do about the handler repositories?
-			// Answer: Need to implement IEmbeddedMessageContentHandler and put that in the repo. It will extract appropriate text from the conflict msg.
-
-			// Above is how we had been doing it, but now we're just going to compare GUIDs instead. This means that if the LF comment gets edited
-			// after a S/R, the edit will *not* appear in FLEx, which will continue to have the original version of the comment.
-			return (chorusMsg.Guid == lfReply.Guid);
-		}
-
 		private string LfStatusToChorusStatus(string lfStatus)
 		{
 			if (lfStatus == SerializableLfComment.Resolved)
 			{
-				return SerializableChorusAnnotation.Closed;
+				return Chorus.notes.Annotation.Closed;
 			}
 			else
 			{
-				return SerializableChorusAnnotation.Open;
+				return Chorus.notes.Annotation.Open;
 			}
-		}
-
-		private bool AnnotationsAreAlike(Annotation chorusAnnotation, SerializableLfComment annotationInfo)
-		{
-			// Since we currently don't have message Guids, we have to compare contents
-			if (chorusAnnotation.Messages.Count() != annotationInfo.Replies.Count)
-			{
-				return false;
-			}
-			foreach (var pair in chorusAnnotation.Messages.Zip(annotationInfo.Replies, (msg, reply) => new { Msg = msg, Reply = reply }))
-			{
-				if ( ! MessageIsLikeReply(pair.Msg, pair.Reply))
-				{
-					return false;
-				}
-			}
-			return true;
 		}
 
 		private void SetChorusAnnotationMessagesFromLfReplies(Annotation chorusAnnotation, SerializableLfComment annotationInfo, string annotationObjectId, Dictionary<string,string> uniqIdsThatNeedGuids, Dictionary<string,string> commentIdsThatNeedGuids)
@@ -224,7 +197,7 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			// Since LF allows changing a comment's status without adding any replies, it's possible we haven't updated the Chorus status yet at this point.
 			// But first, check for a special case. Oten, the Chorus annotation's status will be blank, which corresponds to "open" in LfMerge. We don't want
 			// to add a blank message just to change the Chorus status from "" (empty string) to "open", so we need to detect this situation specially.
-			if (String.IsNullOrEmpty(chorusAnnotation.Status) && statusToSet == SerializableChorusAnnotation.Open)
+			if (String.IsNullOrEmpty(chorusAnnotation.Status) && statusToSet == Chorus.notes.Annotation.Open)
 			{
 				// No need for new status here
 			}
@@ -235,9 +208,9 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			}
 		}
 
-		private AnnotationRepository[] GetAnnotationRepositories()
+		private AnnotationRepository[] GetAnnotationRepositories(IProgress progress)
 		{
-			AnnotationRepository[] projectRepos = AnnotationRepository.CreateRepositoriesFromFolder(ProjectDir, new NullProgress()).ToArray();
+			AnnotationRepository[] projectRepos = AnnotationRepository.CreateRepositoriesFromFolder(ProjectDir, progress).ToArray();
 			// Order of these repos doesn't matter, *except* that we want the "main" repo to be first in the array
 			if (projectRepos.Length <= 0)
 			{
@@ -311,36 +284,9 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			return result;
 		}
 
-		// TODO: Move this to a more appropriate class since the Get and WriteTo handlers both use it
-		public static T DecodeInputFile<T>(string inputFilename)
-		{
-			var jsonSerializer = new DataContractJsonSerializer(typeof(T));
-			string data = File.ReadAllText(inputFilename, Encoding.UTF8);
-			return JsonConvert.DeserializeObject<T>(data);
-
-			// OLD, using DataContract:
-
-			// var commentIdsJsonSerializer = new DataContractJsonSerializer(typeof(T));
-			// using (var stream = File.OpenRead(inputFilename))
-			// {
-			// 	return (T)commentIdsJsonSerializer.ReadObject(stream);
-			// }
-
-		}
-
 		private static string MakeFlexRefURL(string guidStr, string shortName)
 		{
 			return string.Format("silfw://localhost/link?app=flex&database=current&server=&tool=default&guid={0}&tag=&id={0}&label={1}", guidStr, shortName);
-		}
-
-		IEnumerable<Annotation> GetAllAnnotations(string projectDir)
-		{
-			var nullProgress = new NullProgress();
-			return (
-				from repo in AnnotationRepository.CreateRepositoriesFromFolder(projectDir, nullProgress)
-				from ann in repo.GetAllAnnotations()
-				select ann
-			);
 		}
 
 		/// <summary>
@@ -352,67 +298,5 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 		}
 
 		#endregion IBridgeActionTypeHandler impl
-
-		#region IDisposable impl
-
-		/// <summary>
-		/// Finalizer, in case client doesn't dispose it.
-		/// Force Dispose(false) if not already called (i.e. m_isDisposed is true)
-		/// </summary>
-		~LanguageForgeWriteToChorusNotesActionHandler()
-		{
-			Dispose(false);
-			// The base class finalizer is called automatically.
-		}
-
-		/// <summary>
-		/// Performs application-defined tasks associated with freeing, releasing,
-		/// or resetting unmanaged resources.
-		/// </summary>
-		public void Dispose()
-		{
-			Dispose(true);
-			// This object will be cleaned up by the Dispose method.
-			// Therefore, you should call GC.SupressFinalize to
-			// take this object off the finalization queue
-			// and prevent finalization code for this object
-			// from executing a second time.
-			GC.SuppressFinalize(this);
-		}
-
-		private bool IsDisposed { get; set; }
-
-		/// <summary>
-		/// Executes in two distinct scenarios.
-		///
-		/// 1. If disposing is true, the method has been called directly
-		/// or indirectly by a user's code via the Dispose method.
-		/// Both managed and unmanaged resources can be disposed.
-		///
-		/// 2. If disposing is false, the method has been called by the
-		/// runtime from inside the finalizer and you should not reference (access)
-		/// other managed objects, as they already have been garbage collected.
-		/// Only unmanaged resources can be disposed.
-		/// </summary>
-		/// <remarks>
-		/// If any exceptions are thrown, that is fine.
-		/// If the method is being done in a finalizer, it will be ignored.
-		/// If it is thrown by client code calling Dispose,
-		/// it needs to be handled by fixing the issue.
-		/// </remarks>
-		private void Dispose(bool disposing)
-		{
-			if (IsDisposed)
-				return;
-
-			ProjectName = null;
-			ProjectDir = null;
-
-			IsDisposed = true;
-
-			// You know, I don't think we *need* to be IDisposable any more...
-		}
-
-		#endregion IDisposable impl
 	}
 }
