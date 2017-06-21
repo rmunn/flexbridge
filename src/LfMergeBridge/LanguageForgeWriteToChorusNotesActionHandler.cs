@@ -66,7 +66,7 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			string data = File.ReadAllText(inputFilename);
 			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input data: {data}");
 
-			List<KeyValuePair<string, SerializableLfAnnotation>> commentsFromLF = DecodeInputFile<List<KeyValuePair<string, SerializableLfAnnotation>>>(inputFilename);
+			List<KeyValuePair<string, SerializableLfComment>> commentsFromLF = DecodeInputFile<List<KeyValuePair<string, SerializableLfComment>>>(inputFilename);
 			AnnotationRepository[] annRepos = GetAnnotationRepositories();
 			AnnotationRepository primaryRepo = annRepos[0];
 
@@ -87,10 +87,10 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			var commentIdsThatNeedGuids = new Dictionary<string,string>();
 			var replyIdsThatNeedGuids = new Dictionary<string,string>();
 
-			foreach (KeyValuePair<string, SerializableLfAnnotation> kvp in commentsFromLF)
+			foreach (KeyValuePair<string, SerializableLfComment> kvp in commentsFromLF)
 			{
 				string lfAnnotationObjectId = kvp.Key;
-				SerializableLfAnnotation lfAnnotation = kvp.Value;
+				SerializableLfComment lfAnnotation = kvp.Value;
 				if (lfAnnotation == null || lfAnnotation.IsDeleted)
 				{
 					if (lfAnnotation == null)
@@ -159,7 +159,7 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 
 		private string LfStatusToChorusStatus(string lfStatus)
 		{
-			if (lfStatus == SerializableLfAnnotation.Resolved)
+			if (lfStatus == SerializableLfComment.Resolved)
 			{
 				return SerializableChorusAnnotation.Closed;
 			}
@@ -169,7 +169,7 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			}
 		}
 
-		private bool AnnotationsAreAlike(Annotation chorusAnnotation, SerializableLfAnnotation annotationInfo)
+		private bool AnnotationsAreAlike(Annotation chorusAnnotation, SerializableLfComment annotationInfo)
 		{
 			// Since we currently don't have message Guids, we have to compare contents
 			if (chorusAnnotation.Messages.Count() != annotationInfo.Replies.Count)
@@ -186,7 +186,7 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			return true;
 		}
 
-		private void SetChorusAnnotationMessagesFromLfReplies(Annotation chorusAnnotation, SerializableLfAnnotation annotationInfo, string annotationObjectId, Dictionary<string,string> uniqIdsThatNeedGuids, Dictionary<string,string> commentIdsThatNeedGuids)
+		private void SetChorusAnnotationMessagesFromLfReplies(Annotation chorusAnnotation, SerializableLfComment annotationInfo, string annotationObjectId, Dictionary<string,string> uniqIdsThatNeedGuids, Dictionary<string,string> commentIdsThatNeedGuids)
 		{
 			// TODO: We'll need another parameter, or else a private instance variable, to build up a list of (PHP id, GUID) pairs
 			// for communicating back to LfMerge at the end. I'd prefer another parameter, as an instance variable just hides the

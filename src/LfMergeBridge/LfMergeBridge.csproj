@@ -106,8 +106,8 @@
     <Compile Include="SerializableChorusAnnotation.cs" />
     <Compile Include="SerializableChorusConflict.cs" />
     <Compile Include="SerializableChorusMessage.cs" />
-    <Compile Include="SerializableLfAnnotation.cs" />
     <Compile Include="SerializableLfAuthorInfo.cs" />
+    <Compile Include="SerializableLfComment.cs" />
     <Compile Include="SerializableLfCommentRegarding.cs" />
     <Compile Include="SerializableLfCommentReply.cs" />
     <Compile Include="LanguageForgeCommitAuxiliaryActionHandler.cs" />

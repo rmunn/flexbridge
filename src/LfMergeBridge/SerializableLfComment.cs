@@ -6,7 +6,7 @@ using System.Runtime.Serialization;
 namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 {
 	[DataContract]
-	public class SerializableLfAnnotation
+	public class SerializableLfComment
 	{
  		public static readonly string Open = "open";
 		public static readonly string Resolved = "resolved";

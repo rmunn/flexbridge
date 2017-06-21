@@ -47,27 +47,15 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			ProjectName = Path.GetFileNameWithoutExtension(pOption);
 			ProjectDir = Path.GetDirectoryName(pOption);
 
-			// TODO: Use a better parameter name, a static string stored in LfMergeBridge like other actions do
-			// NOTE that it needs to be the same parameter name that's used in the "Write to Chorus Notes" handler, since the two of them can use the same input file
-			// TODO: Also move that DecodeInputFile function out into its own class, since both handlers are going to use it
+			// TODO: Consider whether to move that DecodeInputFile function out into its own class, since both handlers are going to use it
 			//           - Actually, that "own class" could mostly do two-way work, and have both handlers call ONE of its two "work" functions. Something to consider, at least.
-			// TODO: Decide whether we just want to pull ALL annotations, or just changed ones. If we want to pull just changed ones, uncomment the two lines below
-			// List<SerializableLfAnnotation> dataFromLF = LanguageForgeWriteToChorusNotesActionHandler.DecodeInputFile(options["-i"]);
-			// Dictionary<string, SerializableLfAnnotation> lfAnns = dataFromLF.ToDictionary(ann => ann.Guid, ann => ann);
-			// ... and now do something with this
-
-			// TODO: Yes. we do need to decode the input file. Also, do the TODO that I wrote on DecodeInputFile.
 
 			string inputFilename = options[LfMergeBridge.LfMergeBridgeUtilities.serializedCommentsFromLfMerge];
-			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input filename: {inputFilename}");
-			string data = File.ReadAllText(inputFilename);
-			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input data: {data}");
-
-			List<SerializableLfAnnotation> commentsFromLF = LanguageForgeWriteToChorusNotesActionHandler.DecodeInputFile<List<SerializableLfAnnotation>>(inputFilename);
+			List<SerializableLfComment> commentsFromLF = LanguageForgeWriteToChorusNotesActionHandler.DecodeInputFile<List<SerializableLfComment>>(inputFilename);
 			var knownCommentGuids = new HashSet<string>(commentsFromLF.Where(comment => comment.Guid != null).Select(comment => comment.Guid));
 			var knownReplyGuids = new HashSet<string>(commentsFromLF.Where(comment => comment.Replies != null).SelectMany(comment => comment.Replies.Where(reply => reply.Guid != null).Select(reply => reply.Guid)));
 
-			var lfAnns = new List<SerializableLfAnnotation>();
+			var lfComments = new List<SerializableLfComment>();
 			var lfReplies = new List<Tuple<string, List<SerializableLfCommentReply>>>();
 			foreach (Annotation ann in GetAllAnnotations(ProjectDir))
 			{
@@ -91,7 +79,7 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 				{
 					// New comment: serialize everything
 					var msg = ann.Messages.FirstOrDefault();
-					var lfComment = new SerializableLfAnnotation {
+					var lfComment = new SerializableLfComment {
 						Guid = ann.Guid,
 						// Author = msg?.Author ?? string.Empty,
 						AuthorNameAlternate = (msg == null) ? string.Empty : msg.Author,
@@ -108,11 +96,11 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 						Word = ann.LabelOfThingAnnotated, // TODO: Might have to set this one in LfMerge, using the Guid to find the right word and meaning
 						Meaning = string.Empty  // TODO: Have to set this one in LfMerge; see above
 					};
-					lfAnns.Add(lfComment);
+					lfComments.Add(lfComment);
 				}
 			}
 			var serializedComments = new StringBuilder("New comments not yet in LF: ");
-			serializedComments.Append(JsonConvert.SerializeObject(lfAnns));
+			serializedComments.Append(JsonConvert.SerializeObject(lfComments));
 			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, serializedComments.ToString());
 
 			var serializedReplies = new StringBuilder("New replies on comments already in LF: ");
@@ -147,11 +135,11 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 		{
 			if (status == SerializableChorusAnnotation.Closed)
 			{
-				return SerializableLfAnnotation.Resolved;
+				return SerializableLfComment.Resolved;
 			}
 			else
 			{
-				return SerializableLfAnnotation.Open; // LfMerge will look at this and see if the Mongo DB contained "Todo".
+				return SerializableLfComment.Open; // LfMerge will look at this and see if the Mongo DB contained "Todo".
 			}
 		}
 
