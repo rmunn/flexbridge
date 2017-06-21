@@ -79,11 +79,11 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 					var msg = ann.Messages.FirstOrDefault();
 					var lfComment = new SerializableLfComment {
 						Guid = ann.Guid,
-						// Author = msg?.Author ?? string.Empty,
+						// AuthorNameAlternate = msg?.Author ?? string.Empty,  // C# 6 syntax would be simpler if we could count on a C# 6 compiler everywhere
 						AuthorNameAlternate = (msg == null) ? string.Empty : msg.Author,
-						DateCreated = ann.Date,  // TODO: Local or UTC?
-						DateModified = ann.Date, // Same consideration
-						// Content = msg?.Text ?? string.Empty,
+						DateCreated = ann.Date,
+						DateModified = ann.Date,
+						// Content = msg?.Text ?? string.Empty,  // C# 6 syntax would be simpler if we could count on a C# 6 compiler everywhere
 						Content = (msg == null) ? string.Empty : msg.Text,
 						Status = ChorusStatusToLfStatus(ann.Status),
 						Replies = new List<SerializableLfCommentReply>(ann.Messages.Skip(1).Where(m => ! String.IsNullOrWhiteSpace(m.Text)).Select(ReplyFromChorusMsg)),
@@ -91,8 +91,9 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 					};
 					lfComment.Regarding = new SerializableLfCommentRegarding {
 						TargetGuid = ExtractGuidFromChorusRef(ann.RefStillEscaped),
-						Word = ann.LabelOfThingAnnotated, // TODO: Might have to set this one in LfMerge, using the Guid to find the right word and meaning
-						Meaning = string.Empty  // TODO: Have to set this one in LfMerge; see above
+						// Word and Meaning will be set in LfMerge, but set them to something vaguely sensible here as a fallback
+						Word = ann.LabelOfThingAnnotated,
+						Meaning = string.Empty
 					};
 					lfComments.Add(lfComment);
 				}

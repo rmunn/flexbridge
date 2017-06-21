@@ -45,26 +45,13 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 		/// </summary>
 		void IBridgeActionTypeHandler.StartWorking(IProgress progress, Dictionary<string, string> options, ref string somethingForClient)
 		{
-			// We need to be handed the following things for each note:
-			//   - Its GUID in Chorus
-			//   - Its content (a string)
-			//   - Its owner's basic required information, as follows:
-			//       - Owner's GUID
-			//       - List of GUIDs of any objects the owner owns (use .AllOwnedObjects.Select(x => x.Guid.ToString().ToLowerInvariant())
-			//       - Owner's ShortName property  (might have to compute that for created-in-LF objects. In FW the LexEntry.HeadWordStatic function is used, which uses StringServices.HeadWordForWsAndHn with the default vernacular Ws and entry.HomographNumber, defaulting to ??? if nothing can be found, and HeadwordVariant.Main, which then uses the CitationFormWithAffixTypeStaticFowWs function. If that function doesn't figure it out, then it uses AddHeadwordForWsAndHn. The former gets the citation form and, if it doesn't exist, the lexeme form. If neither of those have a default-vernacular string, then it looks in AlternateFormsOS for the first one with a default-vern string. And if all of THAT still fails, then it returns the ??? strings. And so the AddHeadwordForWsAndHn function pretty much never gets called...)
-			//           - Note that the ShortName goes into the Label, so it might not be necessary to precisely match FW here. OTOH, it might be necessary to avoid later confusion, so...
-			//           - So the summary of that logic is: try the citation form. If that isn't it, try the lexeme form. If that isn't it, give up and return "???" (because LF doesn't do Alternate Forms).
 			var pOption = options["-p"];
 			ProjectName = Path.GetFileNameWithoutExtension(pOption);
 			ProjectDir = Path.GetDirectoryName(pOption);
 			Progress = progress;
 
-			// We need to serialize the Mongo ObjectIds of the SerializableLfAnnotation objects coming from LfMerge (they're called LfComment over there),
-			// but we can't put them in the SerializableLfAnnotation definition
 			string inputFilename = options[LfMergeBridge.LfMergeBridgeUtilities.serializedCommentsFromLfMerge];
-			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input filename: {inputFilename}");
 			string data = File.ReadAllText(inputFilename);
-			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input data: {data}");
 
 			List<KeyValuePair<string, SerializableLfComment>> commentsFromLF = LfMergeBridge.LfMergeBridgeUtilities.DecodeJsonFile<List<KeyValuePair<string, SerializableLfComment>>>(inputFilename);
 			AnnotationRepository[] annRepos = GetAnnotationRepositories(progress);
@@ -79,11 +66,9 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 				chorusAnnotationsByGuid[ann.Guid] = ann;
 			}
 
-			// Next step: go through all the annotations in the project dir and keep track of their GUIDs.
-			// Then decide whether we need to add anything to them because the Messages have changed.
-			// First criterion: how many messages are there?
-			// Second criterion: go through either *content*, or *date modified*. (Decide which one). Probably date modified. (or AuthorInfo.DateModified)
-
+			// We'll keep track of any comment IDs and reply IDs from LF that didn't have GUIDs when they were handed to us, and make sure
+			// that LfMerge can assign the right GUIDs to the right comment and/or reply IDs.
+			// Two dictionaries are needed, because comment IDs are Mongo ObjectId instances, whereas reply IDs are strings coming from PHP's so-called "uniqid" function.
 			var commentIdsThatNeedGuids = new Dictionary<string,string>();
 			var replyIdsThatNeedGuids = new Dictionary<string,string>();
 
@@ -105,6 +90,7 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 					}
 					continue;
 				}
+				// TODO: Once we're compiling with C# 6, use the ?. syntax below instead of the more lengthy (== null) syntax that we're currently using.
 				// string ownerGuid = lfAnnotation.Regarding?.TargetGuid ?? string.Empty;
 				// string ownerShortName = lfAnnotation.Regarding?.Word ?? "???";  // Match FLEx's behavior when short name can't be determined
 				string ownerGuid = (lfAnnotation.Regarding == null) ? string.Empty : lfAnnotation.Regarding.TargetGuid;
@@ -114,19 +100,11 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 				if (lfAnnotation.Guid != null && chorusAnnotationsByGuid.TryGetValue(lfAnnotation.Guid, out chorusAnnotation) && chorusAnnotation != null)
 				{
 					SetChorusAnnotationMessagesFromLfReplies(chorusAnnotation, lfAnnotation, lfAnnotationObjectId, replyIdsThatNeedGuids, commentIdsThatNeedGuids);
-					LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, String.Format("Wrote annotation {0} containing messages [{1}]",
-						chorusAnnotation.Guid, String.Join(", ", chorusAnnotation.Messages.Select(msg => "\"" + msg.Text + "\""))));
-					if (lfAnnotation.Replies == null || lfAnnotation.Replies.Count == 0)
-						LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, "... and it had no replies.");
 				}
 				else
 				{
 					Annotation newAnnotation = CreateAnnotation(lfAnnotation.Content, lfAnnotation.Guid, lfAnnotation.AuthorNameAlternate, lfAnnotation.Status, ownerGuid, ownerShortName);
 					SetChorusAnnotationMessagesFromLfReplies(newAnnotation, lfAnnotation, lfAnnotationObjectId, replyIdsThatNeedGuids, commentIdsThatNeedGuids);
-					LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, String.Format("*NEW* annotation {0} with ref URL {2} containing messages [{1}]",
-						newAnnotation.Guid, String.Join(", ", newAnnotation.Messages.Select(msg => "\"" + msg.Text + "\"")), newAnnotation.RefStillEscaped));
-					if (lfAnnotation.Replies == null || lfAnnotation.Replies.Count == 0)
-						LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, "... which had no replies.");
 					primaryRepo.AddAnnotation(newAnnotation);
 				}
 			}
@@ -161,10 +139,6 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 
 		private void SetChorusAnnotationMessagesFromLfReplies(Annotation chorusAnnotation, SerializableLfComment annotationInfo, string annotationObjectId, Dictionary<string,string> uniqIdsThatNeedGuids, Dictionary<string,string> commentIdsThatNeedGuids)
 		{
-			// TODO: We'll need another parameter, or else a private instance variable, to build up a list of (PHP id, GUID) pairs
-			// for communicating back to LfMerge at the end. I'd prefer another parameter, as an instance variable just hides the
-			// dependency and makes it harder to test.
-
 			// Any LF comments that do NOT yet have GUIDs need them set from the corresponding Chorus annotation
 			if (String.IsNullOrEmpty(annotationInfo.Guid) && !String.IsNullOrEmpty(annotationObjectId))
 			{
@@ -173,10 +147,10 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 
 			if (annotationInfo.Replies == null || annotationInfo.Replies.Count <= 0)
 			{
-				return;  // Nothing to do!
+				return;  // Nothing, or nothing else, to do!
 			}
 
-			var chorusMsgGuids = new HashSet<string>(chorusAnnotation.Messages.Select(msg => msg.Guid).Where(s => ! string.IsNullOrEmpty(s) && s != Guid.Empty.ToString() ));
+			var chorusMsgGuids = new HashSet<string>(chorusAnnotation.Messages.Select(msg => msg.Guid).Where(s => ! string.IsNullOrEmpty(s) && s != zeroGuidStr));
 			string statusToSet = LfStatusToChorusStatus(annotationInfo.Status);
 			// If we're in this function, the Chorus annotation already contains the text of the LF annotation's comment,
 			// so the only thing we need to go through are the replies.
@@ -186,12 +160,10 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 				{
 					continue;
 				}
-				// XYZZY commenting out
 				Message newChorusMsg = chorusAnnotation.AddMessage(reply.AuthorNameAlternate, statusToSet, reply.Content);
 				if ((string.IsNullOrEmpty(reply.Guid) || reply.Guid == zeroGuidStr) && ! string.IsNullOrEmpty(reply.UniqId))
 				{
 					uniqIdsThatNeedGuids[reply.UniqId] = newChorusMsg.Guid;
-					// uniqIdsThatNeedGuids[reply.UniqId] = Guid.NewGuid().ToString(); // Just for testing purposes. TODO: Remove this line entirely.
 				}
 			}
 			// Since LF allows changing a comment's status without adding any replies, it's possible we haven't updated the Chorus status yet at this point.
