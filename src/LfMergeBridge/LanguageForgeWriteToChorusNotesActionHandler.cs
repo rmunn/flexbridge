@@ -59,11 +59,9 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			ProjectDir = Path.GetDirectoryName(pOption);
 			Progress = progress;
 
-			// TODO: Use a better parameter name than "-i". A static string stored in LfMergeBridge, like other actions use, would probably be best.
-
 			// We need to serialize the Mongo ObjectIds of the SerializableLfAnnotation objects coming from LfMerge (they're called LfComment over there),
 			// but we can't put them in the SerializableLfAnnotation definition
-			string inputFilename = options["-i"];
+			string inputFilename = options[LfMergeBridge.LfMergeBridgeUtilities.serializedCommentsFromLfMerge];
 			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input filename: {inputFilename}");
 			string data = File.ReadAllText(inputFilename);
 			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input data: {data}");
@@ -72,20 +70,12 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			AnnotationRepository[] annRepos = GetAnnotationRepositories();
 			AnnotationRepository primaryRepo = annRepos[0];
 
-			// The following line does NOT work, because there can be duplicate keys (why?)
+			// The LINQ-based approach in the following line does NOT work, because there can be duplicate keys for some reason.
 			// Dictionary<string, Annotation> chorusAnnotationsByGuid = annRepos.SelectMany(repo => repo.GetAllAnnotations()).ToDictionary(ann => ann.Guid, ann => ann);
 			// Instead we have to do it by hand:
 			var chorusAnnotationsByGuid = new Dictionary<string, Annotation>();
 			foreach (Annotation ann in annRepos.SelectMany(repo => repo.GetAllAnnotations()))
 			{
-				// if (chorusAnnotationsByGuid.ContainsKey(ann.Guid))
-				// {
-				// 	var oldAnn = chorusAnnotationsByGuid[ann.Guid];
-				// 	LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, String.Format("Duplicate annotation GUID detected: {0} was already an annotation containing messages [{1}], and we just tried to add an annotation containing messages [{2}]",
-				// 		oldAnn.Guid,
-				// 		String.Join(", ", oldAnn.Messages.Select(msg => "\"" + msg.Text + "\"")),
-				// 		String.Join(", ",    ann.Messages.Select(msg => "\"" + msg.Text + "\""))));
-				// }
 				chorusAnnotationsByGuid[ann.Guid] = ann;
 			}
 
@@ -97,8 +87,6 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 			var commentIdsThatNeedGuids = new Dictionary<string,string>();
 			var replyIdsThatNeedGuids = new Dictionary<string,string>();
 
-			// It's silly that we have to write so much verbosity to get this data. C# 7 tuples would be much nicer, but we can't use them yet since
-			// we still have to compile (for now) against Mono 4, which only has C# 6 available. Mono 5 will have C# 7, but we can't count on it yet.
 			foreach (KeyValuePair<string, SerializableLfAnnotation> kvp in commentsFromLF)
 			{
 				string lfAnnotationObjectId = kvp.Key;

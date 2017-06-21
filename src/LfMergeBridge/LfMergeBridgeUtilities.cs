@@ -22,6 +22,7 @@ namespace LfMergeBridge
 		internal const string deleteRepoIfNoSuchBranch = "deleteRepoIfNoSuchBranch";
 		internal const string onlyRepairRepo = "onlyRepairRepo";
 		internal const string commitMessage = "commitMessage";
+		internal const string serializedCommentsFromLfMerge = "serializedCommentsFromLfMerge";
 
 		internal const string failure = "failure";
 		internal const string warning = "warning";

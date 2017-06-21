@@ -58,7 +58,7 @@ namespace FLEx_ChorusPlugin.Infrastructure.ActionHandlers
 
 			// TODO: Yes. we do need to decode the input file. Also, do the TODO that I wrote on DecodeInputFile.
 
-			string inputFilename = options["-i"];
+			string inputFilename = options[LfMergeBridge.LfMergeBridgeUtilities.serializedCommentsFromLfMerge];
 			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input filename: {inputFilename}");
 			string data = File.ReadAllText(inputFilename);
 			LfMergeBridge.LfMergeBridgeUtilities.AppendLineToSomethingForClient(ref somethingForClient, $"Input data: {data}");
